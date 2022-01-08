@@ -58,14 +58,18 @@ func (w *taskWorker) download(t *Task) {
 		defer t.Holder.Close()
 		total := resp.ContentLength
 		count := 0
-		for int64(count) < total {
-			buffer := []byte{}
-			_, err := body.Read(buffer)
+		for int64(count) != total { // on demand
+			buffer := make([]byte, 65536)
+			n, err := body.Read(buffer)
+
 			if err != nil {
+				if err.Error() == "EOF" {
+					break
+				}
 				t.failOnError(err)
 				return
 			}
-			n, err := t.Holder.Write(buffer)
+			n, err = t.Holder.Write(buffer)
 			if err != nil {
 				t.failOnError(err)
 				return

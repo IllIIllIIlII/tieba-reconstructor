@@ -19,7 +19,7 @@ func TestDownloader(T *testing.T) {
 		} else {
 			T.Log(*b)
 		}
-		wg.Done()
+		defer wg.Done()
 	})
 	wg.Add(1)
 	d.Start()
