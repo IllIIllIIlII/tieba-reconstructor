@@ -55,11 +55,11 @@ func (w *taskWorker) download(t *Task) {
 	if code >= 200 && code < 300 {
 		body := resp.Body
 		defer body.Close()
-		defer t.Holder.Close()
+		defer t.holder.Close()
 		total := resp.ContentLength
 		count := 0
 		for int64(count) != total { // on demand
-			buffer := make([]byte, 65536)
+			buffer := make([]byte, 1024*1024)
 			n, err := body.Read(buffer)
 
 			if err != nil {
@@ -69,7 +69,7 @@ func (w *taskWorker) download(t *Task) {
 				t.failOnError(err)
 				return
 			}
-			n, err = t.Holder.Write(buffer)
+			n, err = t.holder.Write(buffer)
 			if err != nil {
 				t.failOnError(err)
 				return
@@ -79,16 +79,6 @@ func (w *taskWorker) download(t *Task) {
 		t.onFinish(nil)
 		return
 
-		// body, err := ioutil.ReadAll(resp.Body)
-		// if err != nil {
-		// 	t.Status = Failed
-		// 	t.onFinish(err)
-		// 	return
-		// }
-		// resp.Body.Close()
-		// t.store(&body)
-		// t.onFinish(nil)
-		// return
 	} else if code == 404 {
 		t.failOnError(Err404{})
 		return
@@ -169,13 +159,17 @@ func (d *Downloader) Start() {
 			for {
 				select {
 				case t := <-d.out:
-					err := t.before()
-					if err == nil {
-						w.download(t)
-						t.after()
+					ok, err := t.before()
+					if ok {
+						t.Status = Finished
 					} else {
-						t.Status = Failed
-						log.Println("Task id: ", t.Id, " failed because ", err.Error())
+						if err == nil {
+							w.download(t)
+							t.after()
+						} else {
+							t.Status = Failed
+							log.Println("Task id: ", t.Id, " failed because ", err.Error())
+						}
 					}
 
 				case <-d.pause:

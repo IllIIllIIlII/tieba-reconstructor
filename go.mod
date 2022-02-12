@@ -29,3 +29,5 @@ require (
 	google.golang.org/protobuf v1.23.0 // indirect
 	gopkg.in/yaml.v2 v2.2.8 // indirect
 )
+
+require github.com/sirupsen/logrus v1.8.1

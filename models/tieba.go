@@ -8,15 +8,15 @@ type TiebaThread struct {
 	Floors      []Floor
 }
 type Floor struct {
-	Number   int //floor number
-	Content  string
-	Author   User
-	Id       string
-	Comments []Comment
+	FloorNumber int
+	Content     string
+	Author      User
+	Id          string
+	Comments    []Comment
 }
 type User struct {
-	Id          int // tieba user id
-	DisplayName string
+	Id          int    `json:"user_id"` // tieba user id
+	DisplayName string `json:"un"`
 	Url         string
 }
 type Comment struct {

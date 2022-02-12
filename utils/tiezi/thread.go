@@ -2,6 +2,7 @@ package thread
 
 import (
 	"fmt"
+	"sync"
 	config "tieba-reconstructor/config"
 	vector "tieba-reconstructor/utils/containers"
 )
@@ -18,6 +19,7 @@ type image struct {
 	url      string
 }
 type ThreadTask struct {
+	ForumName     string
 	Id            string // thread id
 	SeeLz         bool   // see lz
 	FloorLimit    uint
@@ -28,32 +30,33 @@ type ThreadTask struct {
 	currentPage  uint
 	currentFloor uint
 
-	failedPageChan    chan uint
-	failedIamgeChan   chan image
-	done              chan interface{}
-	FailedPage        *vector.Vector     // pages failed to scrape are stored here.
-	FailedPageComment *vector.Vector     // the same applies to comments based on page.
-	FailedImage       *map[uint][]string // images failed to download from the original page
+	lock *sync.Mutex
+
+	FailedPage        *vector.Vector    // pages failed to scrape are stored here.
+	FailedPageComment *vector.Vector    // the same applies to comments based on page.
+	FailedImage       map[string]string // 下载地址：本地名称
 }
 
 func New(id string, flimit uint, seelz bool, comment bool) *ThreadTask {
 	return &ThreadTask{
 		FailedPage:        vector.New(),
 		FailedPageComment: vector.New(),
-		FailedImage:       &map[uint][]string{},
+		FailedImage:       map[string]string{},
 		Id:                id,
 
 		FloorLimit:    flimit,
 		SeeLz:         seelz,
 		EnableComment: comment,
-		done:          make(chan interface{}),
-		currentPage:   0,
-		currentFloor:  0,
+
+		currentPage:  0,
+		currentFloor: 0,
+
+		lock: &sync.Mutex{},
 	}
 }
 
 func (t *ThreadTask) hasNext() bool {
-	return true
+	return t.currentFloor != t.FloorLimit
 }
 
 func (t *ThreadTask) nextPageUrl() string {

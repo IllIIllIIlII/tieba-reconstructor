@@ -4,12 +4,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 )
 
 type TaskStatus int
 
 const (
-	Pending TaskStatus = iota
+	Pending TaskStatus = iota //等待下载
 	Running
 	Paused
 	Failed
@@ -19,6 +20,7 @@ const (
 type OnFinishedFunc func(err error)
 type Callback func() error
 
+//包裹字节slice使其可被当作io.Writer使用
 type byteWriter struct {
 	b *[]byte
 }
@@ -32,18 +34,21 @@ func (b *byteWriter) Close() error {
 	return nil
 }
 
+//存放任务的信息
 type Task struct {
-	Id       string
+	Id     string     //任务的id,需独特
+	Status TaskStatus //任务的状态,参见TaskStatus
+
 	req      http.Request
-	Status   TaskStatus
-	store    func(b *[]byte) error
 	onFinish OnFinishedFunc
-	before   Callback
+	before   func() (bool, error)
 	after    Callback
-	Holder   io.WriteCloser
+	holder   io.WriteCloser
 }
 
-func NewTaskSaveToDisk(id string, req http.Request, path string, finish OnFinishedFunc) *Task {
+//创建一个将内容写入到文件的任务,如果文件不存在,则创建文件
+//id:任务的id,req:url请求,path:保存路径,finish:任务完成后的回调函数
+func NewTaskSaveToDisk(id string, req http.Request, path string, fileName string, finish OnFinishedFunc) *Task {
 	r := &Task{
 		Id:       id,
 		req:      req,
@@ -51,25 +56,42 @@ func NewTaskSaveToDisk(id string, req http.Request, path string, finish OnFinish
 		onFinish: finish,
 	}
 	var f *os.File
-	r.before = func() error {
+	fullPath := filepath.Join(path, fileName)
+	r.before = func() (bool, error) {
+		dwlpath := fullPath
 		var err error
-		f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if _, err = os.Stat(path); os.IsNotExist(err) {
+			err = os.MkdirAll(path, os.ModePerm)
+			if err != nil {
+				return false, err
+			}
+		}
+		if _, err = os.Stat(filepath.Join(path, fileName)); !os.IsNotExist(err) {
+			return true, nil
+		}
+
+		f, err = os.OpenFile(dwlpath+".part", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			defer f.Close()
+		}
 		w := io.WriteCloser(f)
-		r.Holder = w
-		return err
+		r.holder = w
+		return false, err
 	}
 
-	// r.store = func(b *[]byte) error {
-	// 	_, err := r.Holder.Write(*b)
-
-	// 	return err
-	// }
 	r.after = func() error {
-		return r.Holder.Close()
+		dwlpath := fullPath
+		err := os.Rename(dwlpath+".part", dwlpath)
+		if err != nil {
+			r.failOnError(err)
+		}
+		return r.holder.Close()
 	}
 	return r
 }
 
+//创建一个将内容写入到变量的任务
+//id:任务的id,req:url请求,target:待写入变量,finish:任务完成后的回调函数
 func NewTaskToBytes(id string, req http.Request, target *[]byte, finish OnFinishedFunc) *Task {
 	r := &Task{
 		Id:       id,
@@ -77,8 +99,8 @@ func NewTaskToBytes(id string, req http.Request, target *[]byte, finish OnFinish
 		Status:   Pending,
 		onFinish: finish,
 	}
-	r.Holder = &byteWriter{b: target}
-	r.before = func() error { return nil }
+	r.holder = &byteWriter{b: target}
+	r.before = func() (bool, error) { return false, nil }
 	r.after = func() error { return nil }
 
 	return r
